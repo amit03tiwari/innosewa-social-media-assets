@@ -33,7 +33,7 @@ jobs:
               dest = data.get("destination","")
               if not re.fullmatch(r"[A-Za-z0-9_-]{10,100}",file_id):
                   raise ValueError("Invalid Drive file ID")
-              if not re.fullmatch(r"20[0-9]{2}/(0[1-9]|1[0-2])-[a-z]+/[A-Za-z0-9_-]+\\.(png|jpg|jpeg)",dest):
+              if not re.fullmatch(r"20[0-9]{2}/(0[1-9]|1[0-2])-[a-z]+/[A-Za-z0-9_-]+\.(png|jpg|jpeg)",dest):
                   raise ValueError("Invalid destination path")
               path = root / dest
               if path.exists():
@@ -47,12 +47,12 @@ jobs:
               if len(content)>12*1024*1024 or len(content)<1000:
                   raise ValueError("Image size outside allowed bounds")
               if dest.endswith(".png"):
-                  if content[:8]!=b"\\x89PNG\\r\\n\\x1a\\n":
+                  if content[:8]!=b"\x89PNG\r\n\x1a\n":
                       raise ValueError(f"Not a PNG: {content_type}")
                   width,height=struct.unpack(">II",content[16:24])
                   if not (200<=width<=6000 and 200<=height<=6000):
                       raise ValueError("Invalid image dimensions")
-              elif content[:3]!=b"\\xff\\xd8\\xff":
+              elif content[:3]!=b"\xff\xd8\xff":
                   raise ValueError(f"Not a JPEG: {content_type}")
               path.parent.mkdir(parents=True,exist_ok=True)
               path.write_bytes(content)
