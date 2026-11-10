@@ -1,0 +1,69 @@
+name: Import approved social graphics
+on:
+  push:
+    paths:
+      - 'imports/*.json'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: media-import
+  cancel-in-progress: false
+jobs:
+  import-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Download and validate approved image
+        env:
+          GH_EVENT_BEFORE: ${{ github.event.before }}
+          GH_EVENT_AFTER: ${{ github.sha }}
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, subprocess, urllib.request, urllib.parse, struct, re
+          root = pathlib.Path(".")
+          manifests = sorted(pathlib.Path("imports").glob("*.json"))
+          for manifest in manifests:
+              data = json.loads(manifest.read_text())
+              if data.get("approved") is not True:
+                  continue
+              file_id = data.get("google_drive_file_id","")
+              dest = data.get("destination","")
+              if not re.fullmatch(r"[A-Za-z0-9_-]{10,100}",file_id):
+                  raise ValueError("Invalid Drive file ID")
+              if not re.fullmatch(r"20[0-9]{2}/(0[1-9]|1[0-2])-[a-z]+/[A-Za-z0-9_-]+\\.(png|jpg|jpeg)",dest):
+                  raise ValueError("Invalid destination path")
+              path = root / dest
+              if path.exists():
+                  print(f"Already exists: {dest}")
+                  continue
+              url = "https://drive.google.com/uc?export=download&id=" + urllib.parse.quote(file_id)
+              req = urllib.request.Request(url,headers={"User-Agent":"Mozilla/5.0 InnoSewaMediaImport/1.0"})
+              with urllib.request.urlopen(req, timeout=45) as resp:
+                  content_type=resp.headers.get("Content-Type","")
+                  content=resp.read(12*1024*1024+1)
+              if len(content)>12*1024*1024 or len(content)<1000:
+                  raise ValueError("Image size outside allowed bounds")
+              if dest.endswith(".png"):
+                  if content[:8]!=b"\\x89PNG\\r\\n\\x1a\\n":
+                      raise ValueError(f"Not a PNG: {content_type}")
+                  width,height=struct.unpack(">II",content[16:24])
+                  if not (200<=width<=6000 and 200<=height<=6000):
+                      raise ValueError("Invalid image dimensions")
+              elif content[:3]!=b"\\xff\\xd8\\xff":
+                  raise ValueError(f"Not a JPEG: {content_type}")
+              path.parent.mkdir(parents=True,exist_ok=True)
+              path.write_bytes(content)
+              print(f"Imported {dest} ({len(content)} bytes)")
+          PY
+      - name: Commit approved images
+        run: |
+          git config user.name "InnoSewa Media Bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add 20*/
+          if ! git diff --cached --quiet; then
+            git commit -m "Import approved InnoSewa social media graphics"
+            git push
+          fi
